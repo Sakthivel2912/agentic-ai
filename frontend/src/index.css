@@ -1,0 +1,71 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  color-scheme: light;
+  color: #172033;
+  background-color: #f4f7fb;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 8% 8%, rgba(75, 218, 190, 0.13), transparent 28rem),
+    radial-gradient(circle at 94% 16%, rgba(255, 139, 105, 0.12), transparent 25rem),
+    #f4f7fb;
+}
+
+#root {
+  width: 100%;
+  height: 100vh;
+}
+
+::selection {
+  color: #092b3a;
+  background: #8debd7;
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.page-enter {
+  animation: rise-in 420ms ease-out both;
+}
+
+.workspace-grid {
+  background-image: linear-gradient(rgba(33, 67, 94, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(33, 67, 94, 0.035) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+.glass-panel {
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 18px 45px rgba(31, 55, 76, 0.08);
+  backdrop-filter: blur(14px);
+}
