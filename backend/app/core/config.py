@@ -25,6 +25,17 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "your-secret-key-change-this-in-production"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    PASSWORD_RESET_TOKEN_EXPIRE_MINUTES: int = 30
+
+    # Password reset email delivery
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_EMAIL: str = ""
+    SMTP_USE_SSL: bool = False
+    SMTP_STARTTLS: bool = True
+    FRONTEND_URL: str = "http://localhost:5173"
 
     # Groq API
     GROQ_API_KEY: str = ""

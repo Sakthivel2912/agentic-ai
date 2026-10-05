@@ -285,6 +285,12 @@ class ResearchService:
         session.started_at = datetime.utcnow()
         session.progress = 0.0
         session.current_stage = "initializing"
+        session.agent_outputs = {}
+        session.reviewer_feedback = {}
+        session.final_answer = None
+        session.sources = []
+        session.error_message = None
+        session.completed_at = None
         await db.commit()
         await db.refresh(session)
         

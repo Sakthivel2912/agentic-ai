@@ -74,10 +74,11 @@ async def health_check():
         db_status = f"disconnected: {str(e)}"
     
     return {
-        "status": "healthy",
+        "status": "healthy" if db_status == "connected" else "degraded",
         "app_name": settings.APP_NAME,
         "version": settings.APP_VERSION,
         "database": db_status,
+        "llm_configured": bool(settings.GROQ_API_KEY),
         "authentication": "enabled"
     }
 

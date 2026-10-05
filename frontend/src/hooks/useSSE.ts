@@ -28,6 +28,20 @@ export const useSSE = ({
   const [error, setError] = useState<string | null>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
   const { token } = useAuthStore()
+  const callbacksRef = useRef({
+    onProgress,
+    onAgentOutput,
+    onError,
+    onCompletion,
+    onKeepalive,
+  })
+  callbacksRef.current = {
+    onProgress,
+    onAgentOutput,
+    onError,
+    onCompletion,
+    onKeepalive,
+  }
 
   const connect = useCallback(() => {
     if (!enabled || !sessionId || !token) {
@@ -61,7 +75,7 @@ export const useSSE = ({
       eventSource.addEventListener('progress', (e: MessageEvent) => {
         try {
           const data = JSON.parse(e.data)
-          onProgress?.(data)
+          callbacksRef.current.onProgress?.(data)
         } catch (err) {
           console.error('Error parsing progress event:', err)
         }
@@ -70,7 +84,7 @@ export const useSSE = ({
       eventSource.addEventListener('agent_output', (e: MessageEvent) => {
         try {
           const data = JSON.parse(e.data)
-          onAgentOutput?.(data)
+          callbacksRef.current.onAgentOutput?.(data)
         } catch (err) {
           console.error('Error parsing agent_output event:', err)
         }
@@ -79,7 +93,7 @@ export const useSSE = ({
       eventSource.addEventListener('error', (e: MessageEvent) => {
         try {
           const data = JSON.parse(e.data)
-          onError?.(data)
+          callbacksRef.current.onError?.(data)
         } catch (err) {
           console.error('Error parsing error event:', err)
         }
@@ -88,7 +102,7 @@ export const useSSE = ({
       eventSource.addEventListener('completion', (e: MessageEvent) => {
         try {
           const data = JSON.parse(e.data)
-          onCompletion?.(data)
+          callbacksRef.current.onCompletion?.(data)
         } catch (err) {
           console.error('Error parsing completion event:', err)
         }
@@ -97,7 +111,7 @@ export const useSSE = ({
       eventSource.addEventListener('keepalive', (e: MessageEvent) => {
         try {
           JSON.parse(e.data)
-          onKeepalive?.()
+          callbacksRef.current.onKeepalive?.()
         } catch (err) {
           console.error('Error parsing keepalive event:', err)
         }
@@ -106,7 +120,7 @@ export const useSSE = ({
       setError('Failed to create SSE connection')
       console.error('Failed to create SSE connection:', err)
     }
-  }, [sessionId, token, enabled, onProgress, onAgentOutput, onError, onCompletion, onKeepalive])
+  }, [sessionId, token, enabled])
 
   const disconnect = useCallback(() => {
     if (eventSourceRef.current) {

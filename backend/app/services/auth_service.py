@@ -2,15 +2,18 @@
 AI Council - Authentication Service (SQLite)
 """
 from datetime import datetime, timedelta
+import hashlib
+import secrets
 from typing import Optional, Dict, Any
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, update, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models.user import User
+from app.models.user import PasswordResetToken, User
 from app.schemas.user import UserRegister, UserLogin, UserResponse
 from app.core.security import verify_password, create_access_token, decode_access_token, get_password_hash
 from app.core.config import settings
 from app.core.logging import setup_logging
+from app.services.email_service import send_password_reset_email
 import logging
 import uuid
 
@@ -19,6 +22,123 @@ logger = logging.getLogger(__name__)
 
 class AuthService:
     """Authentication service (SQLite)"""
+
+    @staticmethod
+    async def request_password_reset(
+        email: str,
+        db: AsyncSession,
+        allow_test_token: bool = False,
+    ) -> Optional[str]:
+        """Create a reset token and optionally return it for local testing."""
+        email_configured = bool(settings.SMTP_HOST and settings.SMTP_FROM_EMAIL)
+        if not email_configured and not allow_test_token:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Password reset email is not configured",
+            )
+
+        result = await db.execute(
+            select(User).where(func.lower(User.email) == email.lower())
+        )
+        user = result.scalar_one_or_none()
+        if user is None or not user.is_active:
+            return None
+
+        now = datetime.utcnow()
+        await db.execute(
+            update(PasswordResetToken)
+            .where(
+                PasswordResetToken.user_id == user.id,
+                PasswordResetToken.used_at.is_(None),
+            )
+            .values(used_at=now)
+        )
+        token = secrets.token_urlsafe(32)
+        token_record = PasswordResetToken(
+            id=str(uuid.uuid4()),
+            user_id=user.id,
+            token_hash=hashlib.sha256(token.encode("utf-8")).hexdigest(),
+            expires_at=now + timedelta(minutes=settings.PASSWORD_RESET_TOKEN_EXPIRE_MINUTES),
+        )
+        db.add(token_record)
+        await db.commit()
+
+        if not email_configured:
+            return token
+
+        try:
+            await send_password_reset_email(user.email, token)
+        except Exception:
+            await db.execute(
+                update(PasswordResetToken)
+                .where(PasswordResetToken.id == token_record.id)
+                .values(used_at=datetime.utcnow())
+            )
+            await db.commit()
+            logger.exception("Password reset email delivery failed")
+        return None
+
+    @staticmethod
+    async def reset_password(token: str, new_password: str, confirm_password: str, db: AsyncSession) -> None:
+        """Consume a valid reset token and replace the associated password."""
+        if new_password != confirm_password:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Passwords do not match",
+            )
+
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        result = await db.execute(
+            select(PasswordResetToken).where(
+                PasswordResetToken.token_hash == token_hash,
+                PasswordResetToken.used_at.is_(None),
+                PasswordResetToken.expires_at > datetime.utcnow(),
+            )
+        )
+        token_record = result.scalar_one_or_none()
+        if token_record is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Reset link is invalid or expired",
+            )
+
+        result = await db.execute(select(User).where(User.id == token_record.user_id))
+        user = result.scalar_one_or_none()
+        if user is None or not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Reset link is invalid or expired",
+            )
+
+        now = datetime.utcnow()
+        consumed = await db.execute(
+            update(PasswordResetToken)
+            .where(
+                PasswordResetToken.id == token_record.id,
+                PasswordResetToken.used_at.is_(None),
+                PasswordResetToken.expires_at > now,
+            )
+            .values(used_at=now)
+        )
+        if consumed.rowcount != 1:
+            await db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Reset link is invalid or expired",
+            )
+
+        user.hashed_password = get_password_hash(new_password)
+        user.updated_at = now
+        await db.execute(
+            update(PasswordResetToken)
+            .where(
+                PasswordResetToken.user_id == user.id,
+                PasswordResetToken.id != token_record.id,
+                PasswordResetToken.used_at.is_(None),
+            )
+            .values(used_at=now)
+        )
+        await db.commit()
     
     @staticmethod
     async def register_user(user_data: UserRegister, db: AsyncSession) -> UserResponse:

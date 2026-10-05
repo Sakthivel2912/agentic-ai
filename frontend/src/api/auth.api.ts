@@ -92,6 +92,26 @@ export const authApi = {
     return response.data;
   },
 
+  requestPasswordReset: async (email: string): Promise<ApiResponse> => {
+    const response = await apiClient.post<ApiResponse>(
+      `${AUTH_BASE_URL}/forgot-password`,
+      { email }
+    );
+    return response.data;
+  },
+
+  resetPassword: async (data: {
+    token: string;
+    new_password: string;
+    confirm_password: string;
+  }): Promise<ApiResponse> => {
+    const response = await apiClient.post<ApiResponse>(
+      `${AUTH_BASE_URL}/reset-password`,
+      data
+    );
+    return response.data;
+  },
+
   /**
    * Logout
    */

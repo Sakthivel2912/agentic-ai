@@ -1,6 +1,14 @@
 import sqlite3
+from pathlib import Path
 
-from app.database.sqlite import upgrade_sqlite_schema
+from app.database.sqlite import resolve_database_path, upgrade_sqlite_schema
+
+
+def test_relative_database_path_is_independent_of_working_directory(tmp_path, monkeypatch):
+    expected_path = Path(__file__).resolve().parents[1] / "ai_council.db"
+    monkeypatch.chdir(tmp_path)
+
+    assert resolve_database_path("ai_council.db") == expected_path.resolve()
 
 
 def test_upgrade_sqlite_schema_adds_missing_research_columns(tmp_path):

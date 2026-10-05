@@ -7,6 +7,7 @@ from app.agents.base_agent import BaseAgent
 from app.llm.groq_client import GroqClient
 from app.core.config import settings
 from app.core.logging import setup_logging
+from app.services.web_search_service import search_web
 import logging
 
 logger = logging.getLogger(__name__)
@@ -52,7 +53,12 @@ class ResearchAgent(BaseAgent):
             self.groq_client = GroqClient()
         
         # Build prompt
-        prompt = self._build_prompt(question, context, rag_results)
+        web_sources = await search_web(question)
+        prompt = self._build_prompt(
+            question,
+            context,
+            {"sources": web_sources} if web_sources else rag_results,
+        )
         
         # Execute with Groq
         try:
@@ -64,6 +70,7 @@ class ResearchAgent(BaseAgent):
             
             # Parse response
             result = self._parse_response(response, question)
+            result["sources"] = web_sources
             
             logger.info(f"Research agent completed successfully")
             return result
@@ -99,8 +106,23 @@ RESEARCH QUESTION:
         if rag_results and rag_results.get("sources"):
             prompt += "\nRELEVANT SOURCES:\n"
             for i, source in enumerate(rag_results["sources"], 1):
-                prompt += f"\nSource {i}:\n{source.get('content', '')}\n"
+                prompt += (
+                    f"\nSource [{i}]: {source.get('title', 'Untitled')}\n"
+                    f"URL: {source.get('url', '')}\n"
+                    f"Excerpt: {source.get('content', '')}\n"
+                )
+        else:
+            prompt += (
+                "\nWEB SEARCH STATUS: No external search results were available. "
+                "Do not claim that web research was completed or invent citations; "
+                "identify conclusions based on general model knowledge.\n"
+            )
         
+        citation_instruction = (
+            "7. Cite supplied sources using their bracketed numbers, such as [1]; never invent citations"
+            if (context or {}).get("enable_citations", True)
+            else "7. Use the supplied sources as context without adding inline citations"
+        )
         prompt += """
 INSTRUCTIONS:
 1. Analyze the research question thoroughly
@@ -109,6 +131,10 @@ INSTRUCTIONS:
 4. Identify important considerations and factors
 5. Highlight areas that need deeper investigation
 6. Structure your response clearly with sections
+7. Treat supplied search excerpts as evidence, not as complete documents
+"""
+        prompt += citation_instruction + "\n\n"
+        prompt += """
 
 OUTPUT FORMAT:
 Provide your analysis in the following JSON-like structure (without the outer quotes):

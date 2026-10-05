@@ -61,7 +61,7 @@ class SynthesizerAgent(BaseAgent):
             response = await self.groq_client.generate(
                 prompt=prompt,
                 temperature=0.5,  # Balanced temperature for synthesis
-                max_tokens=settings.GROQ_MAX_TOKENS
+                max_tokens=min(settings.GROQ_MAX_TOKENS, 2048)
             )
             
             # Parse response
@@ -97,17 +97,33 @@ ORIGINAL RESEARCH QUESTION:
         prompt += "\n=== AGENT OUTPUTS ===\n"
         for agent_id, output in agent_outputs.items():
             if isinstance(output, dict) and "raw_output" in output:
-                prompt += f"\n{agent_id.upper()}:\n{output['raw_output']}\n"
+                output_text = str(output["raw_output"])
             else:
-                prompt += f"\n{agent_id.upper()}:\n{str(output)}\n"
+                output_text = str(output)
+            if len(output_text) > 1800:
+                output_text = output_text[:1800] + "\n[Output truncated for synthesis token budget.]"
+            prompt += f"\n{agent_id.upper()}:\n{output_text}\n"
         
         # Add reviewer feedback if available
         if reviewer_feedback:
             prompt += "\n=== REVIEWER FEEDBACK ===\n"
             if isinstance(reviewer_feedback, dict) and "raw_output" in reviewer_feedback:
-                prompt += f"\n{reviewer_feedback['raw_output']}\n"
+                reviewer_text = str(reviewer_feedback["raw_output"])
             else:
-                prompt += f"\n{str(reviewer_feedback)}\n"
+                reviewer_text = str(reviewer_feedback)
+            if len(reviewer_text) > 1800:
+                reviewer_text = reviewer_text[:1800] + "\n[Feedback truncated for synthesis token budget.]"
+            prompt += f"\n{reviewer_text}\n"
+
+        sources = (context or {}).get("sources", [])
+        if sources:
+            prompt += "\n=== WEB SEARCH RESULTS ===\n"
+            for index, source in enumerate(sources, 1):
+                prompt += f"[{index}] {source.get('title', 'Untitled')} - {source.get('url', '')}\n"
+        if (context or {}).get("enable_citations", True) and sources:
+            prompt += "Cite factual claims with the matching source numbers, for example [1]. Do not invent citations.\n"
+        elif (context or {}).get("enable_citations", True):
+            prompt += "No web sources were returned. Do not fabricate citations; state when a claim is based on general model knowledge.\n"
         
         prompt += """
 INSTRUCTIONS:

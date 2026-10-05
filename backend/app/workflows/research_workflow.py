@@ -3,7 +3,7 @@ AI Council - Research Workflow
 LangGraph workflow for multi-agent research orchestration
 """
 from typing import TypedDict, Annotated, List, Dict, Any, Optional
-from operator import add
+from operator import or_
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 from app.models.research_session import SessionStatus
@@ -16,6 +16,8 @@ from app.agents.product_agent import ProductAgent
 from app.agents.security_agent import SecurityAgent
 from app.agents.reviewer_agent import ReviewerAgent
 from app.agents.synthesizer_agent import SynthesizerAgent
+from app.services.sse_service import sse_service
+from app.services.adaptive_router import route_research_question
 from app.core.logging import setup_logging
 import logging
 
@@ -42,7 +44,7 @@ class ResearchState(TypedDict):
     selected_document_ids: List[str]
     
     # Agent outputs (accumulated)
-    agent_outputs: Annotated[Dict[str, Any], add]
+    agent_outputs: Annotated[Dict[str, Any], or_]
     
     # Reviewer feedback
     reviewer_feedback: Optional[Dict[str, Any]]
@@ -80,6 +82,7 @@ class ResearchWorkflow:
         """
         workflow = StateGraph(ResearchState)
         
+        workflow.add_node("adaptive_router", self._adaptive_router_node)
         # Add nodes for each agent type
         workflow.add_node("research_agent", self._research_agent_node)
         workflow.add_node("technical_agent", self._technical_agent_node)
@@ -91,7 +94,8 @@ class ResearchWorkflow:
         workflow.add_node("synthesizer_agent", self._synthesizer_agent_node)
         
         # Set entry point
-        workflow.set_entry_point("research_agent")
+        workflow.set_entry_point("adaptive_router")
+        workflow.add_edge("adaptive_router", "research_agent")
         
         # Add conditional edges based on selected agents
         workflow.add_conditional_edges(
@@ -272,112 +276,185 @@ class ResearchWorkflow:
     security_agent = SecurityAgent()
     reviewer_agent = ReviewerAgent()
     synthesizer_agent = SynthesizerAgent()
+
+    async def _adaptive_router_node(self, state: ResearchState) -> ResearchState:
+        """Select specialists from question cues unless the user chose them."""
+        await self._publish_agent_update(
+            state, "adaptive_router", "adaptive_routing", 5.0
+        )
+        selected_agents = state["selected_agents"]
+        if selected_agents:
+            chosen_agents = list(dict.fromkeys(["research_agent", *selected_agents]))
+            decision = {
+                "selected_agents": chosen_agents,
+                "reason_for_selection": {
+                    agent_id: "Explicitly selected for this research session."
+                    for agent_id in chosen_agents
+                },
+                "estimated_complexity": "manual",
+                "estimated_research_depth": "user_selected",
+            }
+        else:
+            decision = route_research_question(state["question"], state["category"])
+
+        state["selected_agents"] = decision["selected_agents"]
+        state["metadata"]["adaptive_router"] = decision
+        await sse_service.send_agent_output(
+            state["session_id"], "adaptive_router", decision
+        )
+        return state
+
+    async def _publish_agent_update(
+        self,
+        state: ResearchState,
+        agent_id: str,
+        stage: str,
+        progress: float,
+        output: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        state["current_stage"] = stage
+        state["progress"] = progress
+        await sse_service.send_progress_update(
+            state["session_id"], progress, stage, agent_id
+        )
+        if output is not None:
+            await sse_service.send_agent_output(
+                state["session_id"], agent_id, output
+            )
     
     # Agent node implementations
     async def _research_agent_node(self, state: ResearchState) -> ResearchState:
         """Research agent node implementation"""
         logger.info(f"Research agent processing: {state['question']}")
+        await self._publish_agent_update(state, "research_agent", "research_analysis", 10.0)
         result = await self.research_agent.execute(
             question=state["question"],
-            context={"category": state["category"]},
+            context={
+                "category": state["category"],
+                "enable_citations": state["enable_citations"],
+            },
             rag_results=None  # TODO: Implement RAG retrieval
         )
-        state["current_stage"] = "research_analysis"
-        state["progress"] = 10.0
+        if result.get("status") == "failed":
+            raise RuntimeError(result.get("error", "Research agent failed"))
         state["agent_outputs"]["research_agent"] = result
+        state["sources"] = result.get("sources", [])
+        await self._publish_agent_update(
+            state, "research_agent", "research_analysis", 15.0, result
+        )
         return state
     
     async def _technical_agent_node(self, state: ResearchState) -> ResearchState:
         """Technical agent node implementation"""
         logger.info(f"Technical agent processing: {state['question']}")
+        await self._publish_agent_update(state, "technical_agent", "technical_analysis", 20.0)
         result = await self.technical_agent.execute(
             question=state["question"],
             context={"category": state["category"]},
             previous_outputs=state["agent_outputs"]
         )
-        state["current_stage"] = "technical_analysis"
-        state["progress"] = 25.0
         state["agent_outputs"]["technical_agent"] = result
+        await self._publish_agent_update(
+            state, "technical_agent", "technical_analysis", 25.0, result
+        )
         return state
     
     async def _cost_agent_node(self, state: ResearchState) -> ResearchState:
         """Cost agent node implementation"""
         logger.info(f"Cost agent processing: {state['question']}")
+        await self._publish_agent_update(state, "cost_agent", "cost_analysis", 35.0)
         result = await self.cost_agent.execute(
             question=state["question"],
             context={"category": state["category"]},
             previous_outputs=state["agent_outputs"]
         )
-        state["current_stage"] = "cost_analysis"
-        state["progress"] = 40.0
         state["agent_outputs"]["cost_agent"] = result
+        await self._publish_agent_update(
+            state, "cost_agent", "cost_analysis", 40.0, result
+        )
         return state
     
     async def _data_agent_node(self, state: ResearchState) -> ResearchState:
         """Data agent node implementation"""
         logger.info(f"Data agent processing: {state['question']}")
+        await self._publish_agent_update(state, "data_agent", "data_analysis", 50.0)
         result = await self.data_agent.execute(
             question=state["question"],
             context={"category": state["category"]},
             previous_outputs=state["agent_outputs"]
         )
-        state["current_stage"] = "data_analysis"
-        state["progress"] = 55.0
         state["agent_outputs"]["data_agent"] = result
+        await self._publish_agent_update(
+            state, "data_agent", "data_analysis", 55.0, result
+        )
         return state
     
     async def _product_agent_node(self, state: ResearchState) -> ResearchState:
         """Product agent node implementation"""
         logger.info(f"Product agent processing: {state['question']}")
+        await self._publish_agent_update(state, "product_agent", "product_analysis", 65.0)
         result = await self.product_agent.execute(
             question=state["question"],
             context={"category": state["category"]},
             previous_outputs=state["agent_outputs"]
         )
-        state["current_stage"] = "product_analysis"
-        state["progress"] = 70.0
         state["agent_outputs"]["product_agent"] = result
+        await self._publish_agent_update(
+            state, "product_agent", "product_analysis", 70.0, result
+        )
         return state
     
     async def _security_agent_node(self, state: ResearchState) -> ResearchState:
         """Security agent node implementation"""
         logger.info(f"Security agent processing: {state['question']}")
+        await self._publish_agent_update(state, "security_agent", "security_analysis", 80.0)
         result = await self.security_agent.execute(
             question=state["question"],
             context={"category": state["category"]},
             previous_outputs=state["agent_outputs"]
         )
-        state["current_stage"] = "security_analysis"
-        state["progress"] = 85.0
         state["agent_outputs"]["security_agent"] = result
+        await self._publish_agent_update(
+            state, "security_agent", "security_analysis", 85.0, result
+        )
         return state
     
     async def _reviewer_agent_node(self, state: ResearchState) -> ResearchState:
         """Reviewer agent node implementation"""
         logger.info(f"Reviewer agent processing outputs")
+        await self._publish_agent_update(state, "reviewer_agent", "critical_review", 90.0)
         result = await self.reviewer_agent.execute(
             question=state["question"],
             agent_outputs=state["agent_outputs"],
             context={"category": state["category"]}
         )
-        state["current_stage"] = "critical_review"
-        state["progress"] = 90.0
         state["reviewer_feedback"] = result
+        await self._publish_agent_update(
+            state, "reviewer_agent", "critical_review", 92.0, result
+        )
         return state
     
     async def _synthesizer_agent_node(self, state: ResearchState) -> ResearchState:
         """Synthesizer agent node implementation"""
         logger.info(f"Synthesizer agent combining outputs")
+        await self._publish_agent_update(state, "synthesizer_agent", "synthesis", 95.0)
         result = await self.synthesizer_agent.execute(
             question=state["question"],
             agent_outputs=state["agent_outputs"],
             reviewer_feedback=state["reviewer_feedback"],
-            context={"category": state["category"]}
+            context={
+                "category": state["category"],
+                "sources": state["sources"],
+                "enable_citations": state["enable_citations"],
+            }
         )
-        state["current_stage"] = "synthesis"
-        state["progress"] = 100.0
+        if result.get("status") == "failed":
+            raise RuntimeError(result.get("error", "Answer synthesis failed"))
         state["final_answer"] = result.get("raw_output", "")
         state["agent_outputs"]["synthesizer_agent"] = result
+        await self._publish_agent_update(
+            state, "synthesizer_agent", "synthesis", 100.0, result
+        )
         return state
     
     async def execute_workflow(

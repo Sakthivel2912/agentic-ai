@@ -98,6 +98,16 @@ class PasswordChange(BaseModel):
         }
 
 
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetConfirm(BaseModel):
+    token: str = Field(..., min_length=32, max_length=256)
+    new_password: str = Field(..., min_length=8, max_length=100)
+    confirm_password: str = Field(..., min_length=8, max_length=100)
+
+
 class TokenResponse(BaseModel):
     """Token response schema"""
     access_token: str

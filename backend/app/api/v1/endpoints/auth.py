@@ -3,12 +3,22 @@ AI Council - Authentication API Endpoints
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from app.schemas.user import UserRegister, UserLogin, UserResponse, TokenResponse, UserUpdate, PasswordChange
+from app.schemas.user import (
+    UserRegister,
+    UserLogin,
+    UserResponse,
+    TokenResponse,
+    UserUpdate,
+    PasswordChange,
+    PasswordResetRequest,
+    PasswordResetConfirm,
+)
 from app.schemas.common import SuccessResponse
 from app.services.auth_service import AuthService
 from app.api.dependencies import get_current_user
 from app.models.user import User
 from app.database.sqlite import sqlite
+from app.core.config import settings
 from app.core.logging import setup_logging
 import logging
 
@@ -18,6 +28,47 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 # OAuth2 scheme for token authentication
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+
+
+@router.post("/forgot-password", response_model=SuccessResponse)
+async def forgot_password(request_data: PasswordResetRequest):
+    """Send a reset link when the account exists, without confirming account existence."""
+    db = sqlite.get_session()
+    try:
+        testing_token = await AuthService.request_password_reset(
+            request_data.email,
+            db,
+            allow_test_token=settings.DEBUG and not (settings.SMTP_HOST and settings.SMTP_FROM_EMAIL),
+        )
+        if settings.DEBUG and testing_token:
+            reset_url = (
+                f"{settings.FRONTEND_URL.rstrip('/')}/reset-password?token={testing_token}"
+            )
+            return SuccessResponse(
+                message="Testing reset link created.",
+                data={"reset_url": reset_url},
+            )
+        return SuccessResponse(
+            message="If an active account matches that email, a reset link will be sent."
+        )
+    finally:
+        await db.close()
+
+
+@router.post("/reset-password", response_model=SuccessResponse)
+async def reset_password(request_data: PasswordResetConfirm):
+    """Set a new password using a valid one-time reset token."""
+    db = sqlite.get_session()
+    try:
+        await AuthService.reset_password(
+            request_data.token,
+            request_data.new_password,
+            request_data.confirm_password,
+            db,
+        )
+        return SuccessResponse(message="Password reset successfully. You can now sign in.")
+    finally:
+        await db.close()
 
 
 @router.post("/register", response_model=SuccessResponse, status_code=status.HTTP_201_CREATED)

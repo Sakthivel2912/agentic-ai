@@ -30,6 +30,7 @@ langgraph==0.0.20
 
 # Groq
 groq==0.4.1
+ddgs>=9.5,<10
 
 # Embeddings
 sentence-transformers==2.3.1

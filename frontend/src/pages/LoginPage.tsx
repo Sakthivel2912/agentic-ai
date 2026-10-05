@@ -61,6 +61,11 @@ export const LoginPage: React.FC = () => {
                 onChange={(event) => setCredentials({ ...credentials, password: event.target.value })}
                 className="w-full rounded-xl border border-[#d7e3e8] bg-white/75 px-4 py-3 text-[#172033] outline-none transition placeholder:text-[#9aadb6] focus:border-[#42cdb3] focus:ring-4 focus:ring-[#42cdb3]/15"
                 placeholder="Enter your password" />
+              <div className="mt-2 text-right">
+                <a href="/forgot-password" className="text-sm font-bold text-[#167d70] hover:text-[#e2775f]">
+                  Forgot password?
+                </a>
+              </div>
             </div>
 
             {error && <div className="rounded-xl border border-[#f4b4a7] bg-[#fff0ed] px-4 py-3 text-sm font-medium text-[#a74838]">{error}</div>}

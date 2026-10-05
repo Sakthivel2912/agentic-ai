@@ -6,7 +6,7 @@ AI Council is a multi-agent research and decision-support application. A user cr
 
 **Frontend:** Build-ready and visually refreshed.
 
-**Backend:** Core modules and API routes exist, but the server is not currently runtime-ready. Startup is blocked by Python indentation errors in several endpoint modules and inconsistent database session usage. The research start route currently changes a session to `running` but does not yet complete the workflow and persist a final answer.
+**Backend:** The API and background research workflow are implemented, and the Python source compiles. Research sessions use Groq and web search through DDGS. Runtime still requires installing backend dependencies and configuring the root `.env`; RAG retrieval is not implemented yet.
 
 This README describes the project as it exists now, not the intended future architecture.
 
@@ -249,10 +249,10 @@ Set-Location backend
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8001
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8002
 ```
 
-The backend command is the intended development command, but the current source must first be repaired as described below.
+The local frontend configuration points to port `8002`. The root `.env` must contain a valid `GROQ_API_KEY` for analysis generation.
 
 ### Docker
 
@@ -260,7 +260,7 @@ The backend command is the intended development command, but the current source 
 docker-compose up --build
 ```
 
-Docker Compose is configured for the SQLite application database and should be treated as a local development setup until the backend compile errors are repaired.
+Docker Compose is configured for the SQLite application database and uses port `8000` for the backend.
 
 ## Verification Performed
 
@@ -269,21 +269,18 @@ Docker Compose is configured for the SQLite application database and should be t
 - Login page was opened in the Vite development server and visually checked at desktop size.
 - Frontend routes, stores, API modules, and SSE hook were reviewed.
 - Environment variable names in `.env` were compared with `.env.example`.
-- Backend Python compilation currently fails before startup because of indentation errors in:
-  - `backend/app/api/v1/endpoints/research.py`
-  - `backend/app/api/v1/endpoints/documents.py`
-  - `backend/app/api/v1/endpoints/reports.py`
-  - `backend/app/api/v1/endpoints/evaluations.py`
+- Backend Python source compilation passed with `python -m compileall -q backend/app`.
+- Web search returned source links in a direct DDGS adapter smoke test.
+- Full backend startup was not verified because FastAPI and the rest of the backend requirements are not installed in the current virtual environment.
 
 ## Known Limitations and Next Work
 
 ### Highest Priority
 
-1. Repair the four backend endpoint modules so the FastAPI app can import.
-2. Fix the database session lifecycle used by authentication and research dependencies.
-3. Wire the research start endpoint to run the workflow in the background.
-4. Persist workflow progress, agent outputs, errors, and final answers.
-5. Authenticate the SSE stream instead of relying on an unauthenticated session URL.
+1. Install backend requirements and verify startup with a configured Groq API key.
+2. Review database session lifecycle in the remaining API routes.
+3. Implement document retrieval for the RAG option.
+4. Authenticate the SSE stream instead of relying on an unauthenticated session URL.
 
 ### Product Completion
 

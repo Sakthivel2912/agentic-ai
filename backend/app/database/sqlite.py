@@ -3,9 +3,11 @@ AI Council - SQLite Database Connection
 """
 import os
 import sqlite3
+from pathlib import Path
 
 from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.engine import URL
 from sqlalchemy.orm import declarative_base, sessionmaker
 from app.core.config import settings
 from app.core.logging import setup_logging
@@ -16,9 +18,22 @@ logger = logging.getLogger(__name__)
 # SQLAlchemy Base
 Base = declarative_base()
 
+BACKEND_DIR = Path(__file__).resolve().parents[2]
+
+
+def resolve_database_path(database: str | Path) -> Path:
+    """Resolve relative SQLite paths from the backend directory, not the shell CWD."""
+    path = Path(database).expanduser()
+    if not path.is_absolute():
+        path = BACKEND_DIR / path
+    return path.resolve()
+
+
+DATABASE_PATH = resolve_database_path(settings.SQLITE_DATABASE)
+
 # Async engine for SQLite
 async_engine = create_async_engine(
-    f"sqlite+aiosqlite:///{settings.SQLITE_DATABASE}",
+    URL.create("sqlite+aiosqlite", database=str(DATABASE_PATH)),
     echo=False,
     future=True
 )
@@ -32,7 +47,7 @@ AsyncSessionLocal = async_sessionmaker(
 
 # Sync engine for migrations
 sync_engine = create_engine(
-    f"sqlite:///{settings.SQLITE_DATABASE}",
+    URL.create("sqlite", database=str(DATABASE_PATH)),
     echo=False,
     future=True
 )
@@ -60,9 +75,9 @@ class SQLite:
             async with async_engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
 
-            upgrade_sqlite_schema()
+            upgrade_sqlite_schema(str(DATABASE_PATH))
             
-            logger.info(f"Connected to SQLite: {settings.SQLITE_DATABASE}")
+            logger.info(f"Connected to SQLite: {DATABASE_PATH}")
             return True
             
         except Exception as e:
@@ -102,7 +117,7 @@ sqlite = SQLite()
 
 def upgrade_sqlite_schema(db_path: str | None = None) -> None:
     """Add missing columns to existing SQLite research session tables."""
-    target_db = os.path.abspath(db_path or settings.SQLITE_DATABASE)
+    target_db = os.path.abspath(db_path or DATABASE_PATH)
     conn = sqlite3.connect(target_db)
     try:
         table_info = conn.execute("PRAGMA table_info(research_sessions)").fetchall()

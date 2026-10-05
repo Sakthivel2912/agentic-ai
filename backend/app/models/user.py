@@ -1,7 +1,7 @@
 """
 AI Council - User Model (SQLAlchemy)
 """
-from sqlalchemy import Column, String, Boolean, DateTime, Text
+from sqlalchemy import Column, String, Boolean, DateTime, Text, ForeignKey
 from sqlalchemy.sql import func
 from app.database.sqlite import Base
 from enum import Enum
@@ -55,3 +55,15 @@ class User(Base):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": updated_at.isoformat() if hasattr(updated_at, 'isoformat') else None,
         }
+
+
+class PasswordResetToken(Base):
+    """One-time password reset token stored by digest, never in plaintext."""
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(String, primary_key=True, index=True)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    token_hash = Column(String, nullable=False, unique=True, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    used_at = Column(DateTime(timezone=True), nullable=True)

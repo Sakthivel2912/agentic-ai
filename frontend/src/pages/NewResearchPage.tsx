@@ -10,7 +10,7 @@ import { Button } from '../components/Button'
 
 export const NewResearchPage = () => {
   const navigate = useNavigate()
-  const { createSession, loading, error, clearError } = useResearchStore()
+  const { createSession, startSession, loading, error, clearError } = useResearchStore()
 
   const [formData, setFormData] = useState({
     title: '',
@@ -25,7 +25,7 @@ export const NewResearchPage = () => {
   })
 
   const availableAgents = [
-    { id: 'research_agent', name: 'Research Agent' },
+    { id: 'research_agent', name: 'Research Agent (required)' },
     { id: 'technical_agent', name: 'Technical Agent' },
     { id: 'cost_agent', name: 'Cost/Infrastructure Agent' },
     { id: 'data_agent', name: 'Data Analysis Agent' },
@@ -39,6 +39,11 @@ export const NewResearchPage = () => {
 
     try {
       const session = await createSession(formData)
+      try {
+        await startSession(session.id)
+      } catch (startError) {
+        console.error('Failed to start research session:', startError)
+      }
       navigate(`/research/${session.id}`)
     } catch (err) {
       console.error('Failed to create session:', err)
@@ -141,16 +146,26 @@ export const NewResearchPage = () => {
 
         {/* Agents */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Select Agents
-          </label>
+          <div className="mb-2 flex items-center justify-between gap-4">
+            <label className="block text-sm font-medium text-gray-700">
+              Select Agents
+            </label>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setFormData((prev) => ({ ...prev, selected_agents: [] }))}
+            >
+              Auto Select Agents
+            </Button>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             {availableAgents.map((agent) => (
               <label key={agent.id} className="flex items-center space-x-2">
                 <input
                   type="checkbox"
-                  checked={formData.selected_agents.includes(agent.id)}
+                  checked={agent.id === 'research_agent' || formData.selected_agents.includes(agent.id)}
                   onChange={() => handleAgentToggle(agent.id)}
+                  disabled={agent.id === 'research_agent'}
                   className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                 />
                 <span className="text-sm text-gray-700">{agent.name}</span>
@@ -202,7 +217,7 @@ export const NewResearchPage = () => {
             Cancel
           </Button>
           <Button type="submit" variant="primary" loading={loading}>
-            Create Session
+            Analyze & Generate
           </Button>
         </div>
       </form>

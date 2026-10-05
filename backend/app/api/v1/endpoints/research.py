@@ -63,6 +63,11 @@ async def run_research_workflow(session_id: str, user_id: str) -> None:
             )
 
             session.agent_outputs = final_state.get("agent_outputs", {})
+            session.selected_agents = final_state.get("selected_agents", session.selected_agents or [])
+            session.session_metadata = {
+                **(session.session_metadata or {}),
+                **(final_state.get("metadata") or {}),
+            }
             session.reviewer_feedback = final_state.get("reviewer_feedback") or {}
             session.final_answer = final_state.get("final_answer")
             session.sources = final_state.get("sources", [])
@@ -340,12 +345,12 @@ async def start_research_session(
         Updated research session with running status
     """
     try:
-        db = sqlite.get_session()
-        session = await ResearchService.start_session(
-            session_id=session_id,
-            user_id=str(current_user.id),
-            db=db
-        )
+        async with sqlite.get_session() as db:
+            session = await ResearchService.start_session(
+                session_id=session_id,
+                user_id=str(current_user.id),
+                db=db
+            )
         background_tasks.add_task(
             run_research_workflow,
             session_id,

@@ -54,6 +54,17 @@ GROQ_MODEL=llama3-70b-8192
 GROQ_TEMPERATURE=0.7
 GROQ_MAX_TOKENS=4096
 
+# Password reset email (required for forgot-password requests)
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USERNAME=your-smtp-username
+SMTP_PASSWORD=your-smtp-password
+SMTP_FROM_EMAIL=no-reply@example.com
+SMTP_USE_SSL=false
+SMTP_STARTTLS=true
+FRONTEND_URL=http://localhost:5173
+PASSWORD_RESET_TOKEN_EXPIRE_MINUTES=30
+
 # Pinecone (for RAG features)
 PINECONE_API_KEY=your-pinecone-api-key-here
 PINECONE_INDEX_NAME=ai-council
@@ -338,6 +349,12 @@ SECRET_KEY=<strong-random-key>
 MONGODB_URI=<production-mongodb-uri>
 GROQ_API_KEY=<production-groq-key>
 PINECONE_API_KEY=<production-pinecone-key>
+SMTP_HOST=<production-smtp-host>
+SMTP_PORT=587
+SMTP_USERNAME=<production-smtp-username>
+SMTP_PASSWORD=<production-smtp-password>
+SMTP_FROM_EMAIL=<verified-sender-address>
+FRONTEND_URL=<production-frontend-url>
 ```
 
 ### Docker Deployment
